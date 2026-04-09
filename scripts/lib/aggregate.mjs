@@ -24,10 +24,11 @@ export function analyzeSpans(
     .sort((a, b) => b.durMs - a.durMs)
     .slice(0, topN);
 
-  // Aggregate check time by file
+  // Aggregate check time by file — use only top-level checkSourceFile spans
+  // (not every nested check span) to avoid counting the same work 4–5× over.
   const fileTimeMap = new Map();
   for (const s of spans) {
-    if (s.cat === "check" && s.file) {
+    if (s.name === "checkSourceFile" && s.file) {
       fileTimeMap.set(s.file, (fileTimeMap.get(s.file) || 0) + s.durMs);
     }
   }
@@ -65,26 +66,17 @@ export function analyzeSpans(
 
     // Resolve type info for type-related events
     if (s.args.sourceId != null && typesMap.has(s.args.sourceId)) {
-      entry.sourceType = formatType(typesMap.get(s.args.sourceId), {
-        tryRelative,
-        resolveLocation,
-      });
+      entry.sourceType = formatType(typesMap.get(s.args.sourceId), { tryRelative });
     }
     if (s.args.targetId != null && typesMap.has(s.args.targetId)) {
-      entry.targetType = formatType(typesMap.get(s.args.targetId), {
-        tryRelative,
-        resolveLocation,
-      });
+      entry.targetType = formatType(typesMap.get(s.args.targetId), { tryRelative });
     }
     if (
       s.args.id != null &&
       !entry.sourceType &&
       typesMap.has(s.args.id)
     ) {
-      entry.type = formatType(typesMap.get(s.args.id), {
-        tryRelative,
-        resolveLocation,
-      });
+      entry.type = formatType(typesMap.get(s.args.id), { tryRelative });
     }
 
     return entry;
@@ -93,7 +85,10 @@ export function analyzeSpans(
   return { hotspotsByFile, hotspotsBySpan };
 }
 
-export function formatType(typeEntry, { tryRelative, resolveLocation }) {
+// Note: types.json firstDeclaration.start/end are already {line, character}
+// objects (not raw char offsets like trace.json args.pos/end), so we read
+// the line directly instead of going through resolveLocation.
+export function formatType(typeEntry, { tryRelative }) {
   if (!typeEntry) return null;
   const result = {
     id: typeEntry.id,
@@ -101,16 +96,8 @@ export function formatType(typeEntry, { tryRelative, resolveLocation }) {
   };
   if (typeEntry.firstDeclaration) {
     result.declarationFile = tryRelative(typeEntry.firstDeclaration.path);
-    if (
-      typeEntry.firstDeclaration.start != null &&
-      typeEntry.firstDeclaration.end != null
-    ) {
-      const loc = resolveLocation(
-        typeEntry.firstDeclaration.path,
-        typeEntry.firstDeclaration.start,
-        typeEntry.firstDeclaration.end
-      );
-      if (loc) result.declarationLine = loc.line;
+    if (typeEntry.firstDeclaration.start?.line != null) {
+      result.declarationLine = typeEntry.firstDeclaration.start.line;
     }
   }
   return result;
