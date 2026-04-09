@@ -2,7 +2,7 @@
 
 An Agent Skill that figures out why your TypeScript build is slow.
 
-It runs `tsc --generateTrace` on your project, parses the trace files, finds the operations that take the longest, maps them back to your source code (the trace uses character offsets, not line numbers which makes it slow and cumbersome), and then suggests fixes based on the TypeScript project's official recommendations.
+It runs `tsc --generateTrace` on your project, parses the trace files, finds the operations that take the longest, maps them back to your source code (the trace references positions as raw character offsets, which are awkward for humans to read), and then suggests fixes based on [TypeScript's official performance guide](https://github.com/microsoft/TypeScript/wiki/Performance).
 
 ## What you get
 
@@ -14,7 +14,7 @@ It runs `tsc --generateTrace` on your project, parses the trace files, finds the
     - Dedupe a package
 - A heads-up when something in `node_modules` is duplicated and slowing things down
 
-## Install
+## Installation
 
 ```bash
 npx skills add itaisatati/tsc-trace-analyzer
@@ -26,6 +26,11 @@ After installation just ask your agent (for example, Claude Code) something like
 It'll find your `tsconfig.json`, run the trace, and walk you through what it found.
 
 If your project is huge and `tsc` runs out of memory, the skill knows to retry with more heap.
+
+### My agent doesn't find the skill
+
+With most agent interfaces you can specifically initiate the skill by writing `/tsc-trace-analyzer` as your prompt.
+Make sure you're in the correct project's directory.
 
 ## What's inside
 

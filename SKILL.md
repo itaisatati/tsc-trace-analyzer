@@ -162,6 +162,8 @@ For each hotspot, propose concrete code changes based on the patterns below. Sho
 
 ## Fix Patterns Reference
 
+The patterns below are drawn from [TypeScript's official performance guide](https://github.com/microsoft/TypeScript/wiki/Performance). When presenting them to the user, keep the guidance aligned with that wiki rather than introducing opinions.
+
 When analyzing hotspots, match them against these common TypeScript performance antipatterns:
 
 ### 1. Deeply nested conditional types
@@ -268,3 +270,28 @@ import { Button } from '@/components';
 // After — only loads what's needed
 import { Button } from '@/components/Button';
 ```
+
+### 11. The work doesn't belong in the type system at all
+**Symptom:** A single hotspot is driven by a clever-but-exotic type — deeply recursive template literal types, brand-checks like `IsUpperSnakeCase<S>`, arithmetic-on-types, parsers encoded as conditional types, etc. These often show up as extremely long `structuredTypeRelatedTo` / `instantiateType` chains on tiny amounts of source code.
+**Fix:** Be honest with the user: TypeScript can express these checks, but it's not the right tool for them. Recommend moving the constraint to a more appropriate layer and keeping the TypeScript side simple (`string`, `number`, a plain interface, etc.). Typical alternatives:
+- A **lint rule** (ESLint custom rule, Biome) for format/shape constraints on string literals, naming conventions, file layouts, etc.
+- **Runtime validation** (Zod, Valibot, ArkType, `io-ts`) for data coming from outside the program — these give you runtime guarantees AND a derived TS type for free.
+- **Code generation** (e.g. generating types from an OpenAPI schema, SQL schema, protobuf) instead of deriving them from types at compile time.
+- **A unit test** for invariants that only need to hold for a small, known set of values.
+
+Example — validating `UPPER_SNAKE_CASE` identifiers:
+```typescript
+// Before — recursive conditional type, expensive for each instantiation
+type IsUpperSnake<S extends string> = S extends `${infer C}${infer Rest}`
+  ? C extends Uppercase<C> & ('A'|'B'|'C'|/*...*/|'Z'|'_'|'0'|/*...*/|'9')
+    ? IsUpperSnake<Rest>
+    : false
+  : true;
+function defineEvent<N extends string>(name: N & (IsUpperSnake<N> extends true ? N : never)) { /* ... */ }
+
+// After — plain string in TS, a lint rule enforces the format
+function defineEvent(name: string) { /* ... */ }
+// .eslintrc rule: "no-restricted-syntax" matching non-UPPER_SNAKE_CASE literals in defineEvent() calls
+```
+
+Only suggest this when the hotspot clearly comes from a type-level trick rather than from ordinary application code. Don't recommend ripping out types that are doing useful, idiomatic work.
