@@ -2,7 +2,11 @@
 
 An Agent Skill that figures out why your TypeScript build is slow.
 
-It runs `tsc --generateTrace` on your project, parses the trace files, finds the operations that take the longest, maps them back to your source code (the trace references positions as raw character offsets, which are awkward for humans to read), and then suggests fixes based on [TypeScript's official performance guide](https://github.com/microsoft/TypeScript/wiki/Performance).
+It runs `tsc --generateTrace` on your project and parses the trace files to find the operations that take the longest.
+
+Trace files reference source positions as raw character offsets, which is annoying to manually reference, so the skill maps those back to real file locations before handing you anything.
+
+Suggested fixes follow [TypeScript's official performance guide](https://github.com/microsoft/TypeScript/wiki/Performance).
 
 ## What you get
 
