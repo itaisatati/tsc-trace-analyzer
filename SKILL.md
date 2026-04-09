@@ -42,55 +42,61 @@ Search for `tsconfig.json` files in the project:
 
 ### Step 2: Generate the trace
 
-Run the TypeScript compiler with tracing enabled:
+Use these two fixed paths (no variables, no command substitution):
+
+- Trace output: `/tmp/tsc-trace-analyzer-trace`
+- Emit output: `/tmp/tsc-trace-analyzer-emit`
+
+First, clear any previous run:
 
 ```bash
-STAMP=$(date +%s)
-TRACE_DIR="/tmp/tsc-trace-$STAMP"
-EMIT_DIR="/tmp/tsc-emit-$STAMP"
-npx tsc -p <tsconfig_path> --generateTrace "$TRACE_DIR" --outDir "$EMIT_DIR" --incremental false 2>&1
+rm -rf /tmp/tsc-trace-analyzer-trace /tmp/tsc-trace-analyzer-emit
 ```
+
+Then run the compiler with tracing enabled. Run it as a **single, plain command** — one line, no pipes, no redirections, no `&&` chaining, no `$?` / exit-code echoes:
+
+```bash
+npx tsc -p <tsconfig_path> --generateTrace /tmp/tsc-trace-analyzer-trace --outDir /tmp/tsc-trace-analyzer-emit --incremental false
+```
+
+**Shell hygiene (important):** do NOT wrap the command in `2>&1 | tail -N`, do NOT chain it with `&& echo "EXIT:$?"`, do NOT use `$(…)` command substitution, and do NOT combine multiple commands with `&&` on one line. Keep every command flat and standalone. If tsc produces a lot of output, that's fine — just let it through.
 
 Important flags:
 - `--incremental false` ensures a full compilation (incremental builds skip files and produce incomplete traces)
-- `--outDir "$EMIT_DIR"` redirects emitted `.js` (and `.d.ts`) files to a temp directory so we don't pollute the project. **Do NOT use `--noEmit`** — skipping emit makes the emit phase appear as 0ms in the trace and produces a profile that doesn't match a real production build.
+- `--outDir /tmp/tsc-trace-analyzer-emit` redirects emitted `.js` (and `.d.ts`) files to a temp directory so we don't pollute the project. **Do NOT use `--noEmit`** — skipping emit makes the emit phase appear as 0ms in the trace and produces a profile that doesn't match a real production build.
 - If the project uses a build tool wrapper (e.g., `vue-tsc`, `tspc`), use the appropriate compiler binary instead of `npx tsc`
 
-After analysis is complete, the temp emit directory can be deleted (`rm -rf "$EMIT_DIR"`). Don't delete it during analysis — some hotspot investigations may want to inspect the emitted output.
+After analysis is complete, the temp emit directory can be deleted with `rm -rf /tmp/tsc-trace-analyzer-emit`. Don't delete it during analysis — some hotspot investigations may want to inspect the emitted output.
 
 If the compilation fails with errors, that's OK — the trace is still generated and useful. Inform the user that compilation errors exist but proceed with the analysis.
 
-**If the trace fails with a memory error** (V8 stack traces, "JavaScript heap out of memory", "FATAL ERROR: Reached heap limit"), retry with more heap. The flag changes nothing about the trace output — it just gives V8 enough memory to finish:
+**If the trace fails with a memory error** (V8 stack traces, "JavaScript heap out of memory", "FATAL ERROR: Reached heap limit"), retry with more heap using the `npx --node-options` form (this stays a single plain command, no env-var prefix):
 
 ```bash
-NODE_OPTIONS="--max-old-space-size=8192" npx tsc -p <tsconfig_path> --generateTrace "$TRACE_DIR" --outDir "$EMIT_DIR" --incremental false
+npx --node-options=--max-old-space-size=8192 tsc -p <tsconfig_path> --generateTrace /tmp/tsc-trace-analyzer-trace --outDir /tmp/tsc-trace-analyzer-emit --incremental false
 ```
 
-Or, equivalently using the npx flag form:
-
-```bash
-npx --node-options="--max-old-space-size=8192" tsc -p <tsconfig_path> --generateTrace "$TRACE_DIR" --outDir "$EMIT_DIR" --incremental false
-```
-
-Bump higher (e.g. `12288`, `16384`) if 8GB still isn't enough on very large projects.
+Bump higher (e.g. `12288`, `16384`) if 8GB still isn't enough on very large projects. The flag changes nothing about the trace output — it just gives V8 enough memory to finish.
 
 ### Step 3: Run the analyzer
 
 Run the helper script to parse and aggregate the trace data. The script is plain ESM with zero dependencies, so it runs unchanged on Node.js, Bun, or Deno. Try them in order:
 
+Each of the commands below is a single plain command — no pipes, no redirections, no chaining.
+
 **Preferred — Node.js:**
 ```bash
-node <SKILL_DIR>/scripts/analyze-trace.mjs "$TRACE_DIR" --top 15 --cwd <project_root>
+node <SKILL_DIR>/scripts/analyze-trace.mjs /tmp/tsc-trace-analyzer-trace --top 15 --cwd <project_root>
 ```
 
 **Fallback — Bun (if `node` is not on PATH):**
 ```bash
-bun run <SKILL_DIR>/scripts/analyze-trace.mjs "$TRACE_DIR" --top 15 --cwd <project_root>
+bun run <SKILL_DIR>/scripts/analyze-trace.mjs /tmp/tsc-trace-analyzer-trace --top 15 --cwd <project_root>
 ```
 
 **Fallback — Deno (if neither `node` nor `bun` is available):**
 ```bash
-deno run --allow-read --allow-env <SKILL_DIR>/scripts/analyze-trace.mjs "$TRACE_DIR" --top 15 --cwd <project_root>
+deno run --allow-read --allow-env <SKILL_DIR>/scripts/analyze-trace.mjs /tmp/tsc-trace-analyzer-trace --top 15 --cwd <project_root>
 ```
 
 Check availability with `command -v node`, `command -v bun`, `command -v deno`. If none of the three are installed, tell the user this skill requires Node.js, Bun, or Deno to run the analyzer.
